@@ -2,7 +2,12 @@
 bot:
   name: "MomentumPredictorBot"
   version: "1.0.0"
-  cycle_interval: 60  # segundos entre ciclos
+  cycle_interval: 60 # segundos entre ciclos
+
+  # Modo avanzado: analizar TODOS los pares USDT de Binance
+  analyze_all_usdt_pairs: true
+
+  # Pares específicos (usado solo si analyze_all_usdt_pairs = false)
   trading_pairs:
     - "BTC/USDT"
     - "ETH/USDT"
@@ -10,32 +15,80 @@ bot:
     - "ADA/USDT"
     - "DOT/USDT"
 
+# Configuración del agregador de datos avanzado
+data_aggregator:
+  # WebSocket configuration
+  use_websockets: true
+  max_reconnections: 5
+  ping_interval: 20
+
+  # Filtros para seleccionar pares
+  min_volume_24h: 1000000 # Mínimo $1M volumen diario
+  max_pairs: 200 # Máximo pares a analizar (top por volumen)
+  min_price_change: 0.5 # Mínimo 0.5% cambio para considerar
+
+  # Performance optimization
+  parallel_processing: true
+  max_workers: 20
+  chunk_size: 50 # Pares por conexión WebSocket
+  update_interval: 1 # Segundos entre actualizaciones
+
+  # Almacenamiento en memoria
+  klines_buffer_size: 1000 # Máximo klines por par en memoria
+  ticker_cache_duration: 5 # Segundos para cache de tickers
+
 # Configuración de trading
 trading:
-  paper_trading: true  # Modo demo por defecto
-  initial_balance: 10000.0  # USD para paper trading
-  
+  paper_trading: true # Modo demo por defecto
+  initial_balance: 10000.0 # USD para paper trading
+
+  # Configuración para múltiples pares
+  max_concurrent_positions: 10 # Máximo posiciones simultáneas
+  position_sizing_mode: "dynamic" # dynamic, fixed, volatility_based
+  correlation_limit: 0.7 # Límite de correlación entre posiciones
+
 # Configuración de detección de momentum
 momentum:
   rsi_period: 14
   volume_threshold: 1.5
   price_change_threshold: 0.02
-  prediction_horizon: 24  # horas
-  
+  prediction_horizon: 24 # horas
+
+  # Configuración para análisis masivo
+  batch_processing: true
+  min_confidence_threshold: 0.6
+  signal_cooldown: 300 # Segundos entre señales del mismo par
+
 # Configuración de gestión de riesgo
 risk_management:
-  max_position_size: 0.1  # 10% del portfolio por posición
-  stop_loss_pct: 0.05     # 5% stop loss
-  take_profit_pct: 0.10   # 10% take profit
-  max_daily_trades: 10
-  max_portfolio_risk: 0.3 # 30% del portfolio en riesgo máximo
+  max_position_size: 0.05 # 5% del portfolio por posición (reducido para más pares)
+  stop_loss_pct: 0.03 # 3% stop loss
+  take_profit_pct: 0.06 # 6% take profit
+  max_daily_trades: 50 # Incrementado para múltiples pares
+  max_portfolio_risk: 0.4 # 40% del portfolio en riesgo máximo
+
+  # Risk para múltiples pares
+  sector_concentration_limit: 0.2 # Máximo 20% en un sector
+  pair_correlation_analysis: true
+  dynamic_position_sizing: true
 
 # Configuración de exchanges
 exchanges:
   binance:
-    enabled: false  # Deshabilitado por defecto para demo
-    testnet: true
-    sandbox: true
+    enabled: true # Habilitado para WebSockets
+    use_websockets: true
+    rate_limit_safe: true
+    testnet: false # Usar mainnet para datos reales
+    sandbox: false
+
+    # WebSocket endpoints
+    ws_base_url: "wss://stream.binance.com:9443/ws/"
+    api_base_url: "https://api.binance.com"
+
+    # Rate limiting
+    requests_per_minute: 1000
+    weight_per_minute: 6000
+
     # api_key y secret_key se cargan desde variables de entorno
   coinbase:
     enabled: false
@@ -43,20 +96,34 @@ exchanges:
 
 # Configuración de modelos ML
 ml_models:
-  retrain_interval: 168  # horas (1 semana)
-  min_training_samples: 1000
+  retrain_interval: 168 # horas (1 semana)
+  min_training_samples: 500 # Reducido para más pares
   model_type: "ensemble"
+
+  # Optimización para múltiples pares
+  batch_training: true
+  parallel_training: true
+  max_training_pairs: 50 # Entrenar solo top 50 por volumen
+
   features:
     - "price_change"
     - "volume_ratio"
     - "rsi"
     - "macd"
     - "bollinger_bands"
+    - "volume_profile"
+    - "market_correlation"
 
 # Configuración de notificaciones
 notifications:
   enabled: true
-  console_only: true  # Solo logs por defecto
+  console_only: false
+
+  # Filtros para reducir spam con múltiples pares
+  min_signal_confidence: 0.8
+  max_notifications_per_hour: 20
+  group_similar_notifications: true
+
   telegram:
     enabled: false
     # bot_token y chat_id se cargan desde variables de entorno
@@ -65,9 +132,31 @@ notifications:
     smtp_server: "smtp.gmail.com"
     smtp_port: 587
 
+  # Webhook para alertas críticas
+  webhook:
+    enabled: false
+    url: ""
+    high_priority_only: true
+
+# Configuración de performance monitoring
+performance:
+  enabled: true
+  metrics_interval: 300 # Segundos entre métricas
+  log_top_performers: true
+  track_pair_performance: true
+
+  # Alertas de performance
+  alert_on_high_latency: true
+  max_processing_time: 5 # Segundos máximo por ciclo
+
 # Configuración de logging
 logging:
   level: "INFO"
   file: "momentum_bot.log"
-  max_size_mb: 10
-  backup_count: 5
+  max_size_mb: 50 # Incrementado para más logs
+  backup_count: 10
+
+  # Logging específico para múltiples pares
+  log_pair_analysis: false # true = muy verboso
+  log_websocket_messages: false
+  log_performance_metrics: true
