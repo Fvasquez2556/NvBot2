@@ -4,9 +4,16 @@ Detector de momentum en tiempo real
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List
+from typing import Dict, List, Optional
+from dataclasses import dataclass
 from .base_strategy import BaseStrategy
 
+@dataclass
+class MomentumResult:
+    direction: str  # 'bullish', 'bearish', 'neutral'
+    confidence: float
+    signal_strength: str  # 'weak', 'moderate', 'strong'
+    indicators: Dict
 
 class MomentumDetector(BaseStrategy):
     """Detecta patrones de momentum en los datos de mercado"""
@@ -16,6 +23,55 @@ class MomentumDetector(BaseStrategy):
         self.rsi_period = config.get("momentum.rsi_period", 14)
         self.volume_threshold = config.get("momentum.volume_threshold", 1.5)
         self.price_change_threshold = config.get("momentum.price_change_threshold", 0.02)
+    
+    async def detect_momentum(self, data: pd.DataFrame) -> Optional[MomentumResult]:
+        """
+        Detecta momentum en los datos de mercado
+        """
+        try:
+            if len(data) < self.rsi_period + 1:
+                return None
+                
+            # Calcular indicadores
+            data = self._calculate_indicators(data)
+            
+            # Determinar dirección del momentum
+            if self._detect_bullish_momentum(data):
+                direction = 'bullish'
+                confidence = self._calculate_confidence(data, "bullish")
+            elif self._detect_bearish_momentum(data):
+                direction = 'bearish'
+                confidence = self._calculate_confidence(data, "bearish")
+            else:
+                direction = 'neutral'
+                confidence = 0.5
+            
+            # Determinar fuerza de la señal
+            if confidence >= 0.8:
+                signal_strength = 'strong'
+            elif confidence >= 0.6:
+                signal_strength = 'moderate'
+            else:
+                signal_strength = 'weak'
+            
+            # Recopilar indicadores
+            latest = data.iloc[-1]
+            indicators = {
+                'rsi': latest.get('rsi', 50),
+                'volume_ratio': latest.get('volume_ratio', 1),
+                'price_change': latest.get('price_change', 0)
+            }
+            
+            return MomentumResult(
+                direction=direction,
+                confidence=confidence,
+                signal_strength=signal_strength,
+                indicators=indicators
+            )
+            
+        except Exception as e:
+            print(f"Error detecting momentum: {e}")
+            return None
         
     async def generate_signals(self, data: pd.DataFrame) -> List[Dict]:
         """Genera señales basadas en detección de momentum"""

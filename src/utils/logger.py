@@ -61,3 +61,16 @@ def setup_logger(
         logger.addHandler(file_handler)
     
     return logger
+
+
+def get_logger(name: str) -> logging.Logger:
+    """
+    Obtiene un logger configurado para el módulo especificado
+    
+    Args:
+        name: Nombre del módulo (generalmente __name__)
+    
+    Returns:
+        Logger configurado
+    """
+    return setup_logger(name)

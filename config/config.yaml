@@ -10,6 +10,11 @@ bot:
     - "ADA/USDT"
     - "DOT/USDT"
 
+# Configuración de trading
+trading:
+  paper_trading: true  # Modo demo por defecto
+  initial_balance: 10000.0  # USD para paper trading
+  
 # Configuración de detección de momentum
 momentum:
   rsi_period: 14
@@ -28,8 +33,9 @@ risk_management:
 # Configuración de exchanges
 exchanges:
   binance:
-    enabled: true
+    enabled: false  # Deshabilitado por defecto para demo
     testnet: true
+    sandbox: true
     # api_key y secret_key se cargan desde variables de entorno
   coinbase:
     enabled: false
@@ -39,7 +45,7 @@ exchanges:
 ml_models:
   retrain_interval: 168  # horas (1 semana)
   min_training_samples: 1000
-  model_type: "transformer"
+  model_type: "ensemble"
   features:
     - "price_change"
     - "volume_ratio"
@@ -50,6 +56,7 @@ ml_models:
 # Configuración de notificaciones
 notifications:
   enabled: true
+  console_only: true  # Solo logs por defecto
   telegram:
     enabled: false
     # bot_token y chat_id se cargan desde variables de entorno

@@ -88,16 +88,218 @@ class MomentumPredictorStrategy(BaseStrategy):
         }
         
         logger.info("MomentumPredictorStrategy initialized successfully")
+    
+    def _can_trade_symbol(self, symbol: str) -> bool:
+        """Verifica si podemos operar el símbolo"""
+        # Por ahora siempre retorna True, pero aquí se pueden agregar filtros
+        return True
+    
+    def _reset_daily_counters(self):
+        """Reset contadores diarios si es necesario"""
+        current_date = datetime.now().date()
+        if current_date != self.last_reset_date:
+            self.daily_trades = 0
+            self.last_reset_date = current_date
+    
+    def _calculate_risk_level(self, momentum_result, confluence_result) -> str:
+        """Calcula nivel de riesgo basado en análisis"""
+        avg_confidence = (momentum_result.confidence + confluence_result.confidence_level) / 2
+        
+        if avg_confidence >= 0.8:
+            return 'low'
+        elif avg_confidence >= 0.6:
+            return 'medium'
+        else:
+            return 'high'
 
-    async def analyze_symbol(self, symbol: str, current_price: float) -> Optional[TradeSignal]:
+    async def analyze_symbol(self, symbol: str, df: pd.DataFrame, current_price: float) -> List[TradeSignal]:
         """
-        Análisis completo de un símbolo para generar señal de trading
+        Análisis completo de un símbolo para generar señales de trading
         """
         try:
             # 1. Reset daily counter si es necesario
             self._reset_daily_counters()
             
             # 2. Verificar si podemos operar este símbolo
+            if not self._can_trade_symbol(symbol):
+                return []
+            
+            # 3. Generar señales usando el método abstracto
+            signals = await self.generate_signals(df)
+            
+            # 4. Convertir y validar señales
+            trade_signals = []
+            for signal in signals:
+                if self.validate_signal(signal):
+                    trade_signal = self._convert_to_trade_signal(symbol, signal, current_price)
+                    if trade_signal:
+                        trade_signals.append(trade_signal)
+            
+            return trade_signals
+            
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol}: {e}")
+            return []
+
+    async def generate_signals(self, data: pd.DataFrame) -> List[Dict]:
+        """
+        Implementación del método abstracto - Genera señales de trading
+        """
+        try:
+            signals = []
+            
+            if len(data) < 20:  # Datos insuficientes
+                return signals
+            
+            # Usar última fila para análisis
+            current_data = data.iloc[-1]
+            symbol = "UNKNOWN"  # Se establecerá en analyze_symbol
+            
+            # 1. Detección de momentum
+            momentum_result = await self.momentum_detector.detect_momentum(data)
+            
+            if momentum_result and momentum_result.signal_strength != 'none':
+                # 2. Análisis multi-timeframe (simulado con datos disponibles)
+                confluence_result = await self._simulate_confluence_analysis(data)
+                
+                # 3. Verificar confluencia
+                if confluence_result and confluence_result.confidence_level >= self.min_confluence_score:
+                    
+                    # 4. Generar señal
+                    action = 'buy' if momentum_result.direction == 'bullish' else 'sell'
+                    
+                    signal = {
+                        'action': action,
+                        'confidence': min(momentum_result.confidence, confluence_result.confidence_level),
+                        'momentum_strength': momentum_result.signal_strength,
+                        'confluence_score': confluence_result.confidence_level,
+                        'reasoning': f"Momentum {momentum_result.direction} + Confluence confirmed",
+                        'risk_level': self._calculate_risk_level(momentum_result, confluence_result)
+                    }
+                    
+                    signals.append(signal)
+            
+            return signals
+            
+        except Exception as e:
+            logger.error(f"Error generating signals: {e}")
+            return []
+    
+    def validate_signal(self, signal: Dict) -> bool:
+        """
+        Implementación del método abstracto - Valida una señal
+        """
+        try:
+            # Verificaciones básicas
+            if not signal.get('action') in ['buy', 'sell']:
+                return False
+            
+            if signal.get('confidence', 0) < self.min_confidence:
+                return False
+            
+            if signal.get('confluence_score', 0) < self.min_confluence_score:
+                return False
+            
+            # Verificar límites de trading diario
+            if self.daily_trades >= self.config.get('max_daily_trades', 10):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error validating signal: {e}")
+            return False
+
+    async def _simulate_confluence_analysis(self, data: pd.DataFrame) -> Optional[Dict]:
+        """
+        Simula análisis de confluencia cuando no tenemos datos multi-timeframe
+        """
+        try:
+            # Análisis básico usando indicadores técnicos
+            if len(data) < 20:
+                return None
+            
+            # Calcular algunos indicadores
+            data = data.copy()
+            data['sma_20'] = data['close'].rolling(20).mean()
+            data['rsi'] = self._calculate_rsi(data['close'], 14)
+            
+            latest = data.iloc[-1]
+            
+            # Determinar confluencia basada en indicadores
+            signals = []
+            
+            # Señal de precio vs SMA
+            if latest['close'] > latest['sma_20']:
+                signals.append(1)
+            else:
+                signals.append(-1)
+            
+            # Señal de RSI
+            if 30 < latest['rsi'] < 70:  # RSI neutral es bueno
+                signals.append(1 if latest['rsi'] > 50 else -1)
+            
+            # Calcular confluencia
+            if len(signals) > 0:
+                confidence = abs(sum(signals)) / len(signals)
+                
+                return {
+                    'confidence_level': confidence,
+                    'signals': signals
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error in confluence analysis: {e}")
+            return None
+    
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calcula RSI"""
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    def _convert_to_trade_signal(self, symbol: str, signal: Dict, current_price: float) -> Optional[TradeSignal]:
+        """Convierte señal dict a TradeSignal"""
+        try:
+            # Calcular stop loss y take profit
+            risk_pct = 0.02  # 2% risk
+            reward_ratio = 2.0  # 1:2 risk/reward
+            
+            if signal['action'] == 'buy':
+                stop_loss = current_price * (1 - risk_pct)
+                take_profit = current_price * (1 + risk_pct * reward_ratio)
+            else:
+                stop_loss = current_price * (1 + risk_pct)
+                take_profit = current_price * (1 - risk_pct * reward_ratio)
+            
+            # Calcular tamaño de posición basado en confianza
+            base_position_size = 0.02  # 2% del portfolio
+            confidence_multiplier = signal.get('confidence', 0.5)
+            position_size = base_position_size * confidence_multiplier
+            
+            return TradeSignal(
+                symbol=symbol,
+                action=signal['action'],
+                confidence=signal.get('confidence', 0.5),
+                entry_price=current_price,
+                stop_loss=stop_loss,
+                take_profit_levels=[take_profit],
+                position_size=position_size,
+                reasoning=signal.get('reasoning', 'Momentum + Confluence'),
+                timestamp=datetime.now(),
+                risk_level=signal.get('risk_level', 'medium'),
+                expected_return=risk_pct * reward_ratio,
+                max_holding_time=timedelta(hours=self.max_holding_hours)
+            )
+            
+        except Exception as e:
+            logger.error(f"Error converting signal: {e}")
+            return None
             if not self._can_trade_symbol(symbol):
                 return None
             
