@@ -280,6 +280,10 @@ class BinanceWebSocketAggregator:
     async def _process_websocket_message(self, data: dict):
         """Procesa mensajes de WebSocket en paralelo"""
         try:
+            # Log para debug (solo en modo debug)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Mensaje recibido: {data}")
+            
             # Usar executor para procesar en paralelo sin bloquear el event loop
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(self.executor, self._process_message_sync, data)
@@ -290,20 +294,28 @@ class BinanceWebSocketAggregator:
     def _process_message_sync(self, data: dict):
         """Procesamiento sincrónico de mensajes (ejecutado en thread pool)"""
         try:
-            if 'stream' not in data:
-                return
-                
-            stream = data['stream']
-            payload = data['data']
-            
             with self.data_lock:
                 self.stats['messages_received'] += 1
                 self.stats['last_update'] = datetime.now()
                 
-                if '@ticker' in stream:
-                    self._process_ticker_data(payload)
-                elif '@kline' in stream:
-                    self._process_kline_data(payload)
+                # Manejar formato con stream wrapper
+                if 'stream' in data and 'data' in data:
+                    stream = data['stream']
+                    payload = data['data']
+                    
+                    if '@ticker' in stream:
+                        self._process_ticker_data(payload)
+                    elif '@kline' in stream:
+                        self._process_kline_data(payload)
+                        
+                # Manejar formato directo (sin wrapper)
+                elif 's' in data and 'c' in data:  # Formato ticker directo
+                    self._process_ticker_data(data)
+                elif 'k' in data:  # Formato kline directo
+                    self._process_kline_data(data)
+                else:
+                    # Log para debug si el formato es inesperado
+                    logger.debug(f"Formato de mensaje desconocido: {list(data.keys())}")
                     
         except Exception as e:
             logger.error(f"Error en procesamiento sincrónico: {e}")
@@ -361,11 +373,18 @@ class BinanceWebSocketAggregator:
     
     def _trigger_callbacks(self, event: str, *args):
         """Dispara callbacks registrados"""
-        for callback in self.callbacks[event]:
-            try:
-                callback(*args)
-            except Exception as e:
-                logger.error(f"Error en callback {event}: {e}")
+        try:
+            callback_count = len(self.callbacks[event])
+            if callback_count > 0:
+                logger.debug(f"Disparando {callback_count} callbacks para evento: {event}")
+                
+            for callback in self.callbacks[event]:
+                try:
+                    callback(*args)
+                except Exception as e:
+                    logger.error(f"Error en callback {event}: {e}")
+        except Exception as e:
+            logger.error(f"Error disparando callbacks {event}: {e}")
     
     async def _fetch_initial_data(self):
         """Obtiene datos históricos iniciales para todos los pares"""

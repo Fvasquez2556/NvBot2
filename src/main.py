@@ -1,295 +1,304 @@
 #!/usr/bin/env python3
 """
-Archivo principal del bot de predicción de momentum - NvBot2
+🤖 BOT DE TRADING INTRADÍA EN VIVO - VERSIÓN CORREGIDA
+======================================================
+
+Bot completo con:
+- WebSocket en tiempo real 
+- Señales de trading intradía
+- Price targets
+- Alertas de precaución
+- Precios de entrada optimizados
 """
 
 import asyncio
 import sys
+import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any
-import pandas as pd
+import json
 
-# Agregar el directorio src al path
+# Añadir src al path
 sys.path.append(str(Path(__file__).parent))
 
-from utils.logger import get_logger
-from utils.config_manager import ConfigManager
-from utils.notification_system import NotificationSystem
-from strategies.momentum_predictor_strategy import MomentumPredictorStrategy
-from strategies.momentum_detector import MomentumDetector
-from strategies.multi_timeframe_analyzer import MultiTimeframeAnalyzer
-from data_sources.data_aggregator import DataAggregator
-from live_trading.portfolio_manager import PortfolioManager
-from ml_models.ml_predictor import MLPredictor
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
-logger = get_logger(__name__)
+from data_sources.binance_websocket_aggregator import BinanceWebSocketAggregator
+from strategies.intraday_trading_signals import IntradayTradingSignals
+from ml_models.price_target_predictor import PriceTargetPredictor
 
-class NvBot2:
-    """
-    Bot principal que integra todos los componentes
-    """
+# Mock config para el bot
+class BotConfig:
+    def get(self, key, default=None):
+        configs = {
+            'data_aggregator.min_volume_24h': 5000000,  # $5M+ volumen
+            'data_aggregator.max_pairs': 10,  # Top 10 pares
+            'data_aggregator.update_interval': 1
+        }
+        return configs.get(key, default)
+
+class LiveIntradayBot:
+    """Bot de trading intradía en tiempo real corregido"""
     
     def __init__(self):
-        self.config = ConfigManager()
+        self.config = BotConfig()
+        self.aggregator = None
+        self.signals = IntradayTradingSignals()
+        self.predictor = PriceTargetPredictor()
         self.is_running = False
-        self.components = {}
         
-    async def initialize(self):
-        """Inicializa todos los componentes del bot"""
+        # Estadísticas
+        self.processed_count = 0
+        self.signals_generated = 0
+        self.start_time = None
+        
+        # Cache de datos recientes
+        self.price_cache = {}
+        
+    def display_banner(self):
+        """Banner de inicio"""
+        print("\n" + "="*70)
+        print("🤖 LIVE INTRADAY TRADING BOT - CORREGIDO")
+        print("="*70)
+        print("📊 Trading intradía con datos en vivo")
+        print("⚡ WebSocket en tiempo real")
+        print("🎯 Señales de entrada optimizadas") 
+        print("⚠️  Alertas de precaución integradas")
+        print("💰 Price targets automáticos")
+        print("="*70 + "\n")
+        
+    async def on_price_update(self, symbol, ticker_data):
+        """Procesa actualizaciones de precio en tiempo real"""
         try:
-            logger.info("🚀 Inicializando NvBot2...")
+            self.processed_count += 1
             
-            # Inicializar componentes principales
-            self.components['data_aggregator'] = DataAggregator(self.config)
-            await self.components['data_aggregator'].initialize()
+            # Extraer datos del ticker
+            price = float(ticker_data.price)
+            volume = float(ticker_data.volume_24h)
+            change = float(ticker_data.change_24h)
+            high = float(ticker_data.high_24h)
+            low = float(ticker_data.low_24h)
             
-            self.components['portfolio_manager'] = PortfolioManager(self.config)
-            await self.components['portfolio_manager'].initialize()
-            
-            self.components['ml_predictor'] = MLPredictor(self.config)
-            
-            self.components['momentum_detector'] = MomentumDetector(self.config)
-            
-            self.components['timeframe_analyzer'] = MultiTimeframeAnalyzer(self.config)
-            
-            self.components['main_strategy'] = MomentumPredictorStrategy(self.config)
-            
-            self.components['notification_system'] = NotificationSystem(self.config)
-            await self.components['notification_system'].initialize()
-            
-            # Entrenar modelos ML si es necesario
-            await self._train_ml_models_if_needed()
-            
-            logger.info("✅ Todos los componentes inicializados correctamente")
-            
-        except Exception as e:
-            logger.error(f"❌ Error inicializando bot: {e}")
-            raise
-    
-    async def _train_ml_models_if_needed(self):
-        """Entrena modelos ML si no existen o son muy antiguos"""
-        try:
-            symbols = self.config.get('bot.trading_pairs', ['BTC/USDT'])
-            
-            for symbol in symbols:
-                logger.info(f"📊 Verificando modelos ML para {symbol}")
-                
-                # Obtener datos históricos
-                historical_data = await self.components['data_aggregator'].get_historical_data(
-                    symbol, '1h', 2000
-                )
-                
-                if len(historical_data) > 500:  # Suficientes datos
-                    # Entrenar modelos
-                    performances = self.components['ml_predictor'].train_models(
-                        historical_data, symbol
-                    )
-                    
-                    if performances:
-                        best_model = max(performances.keys(), 
-                                       key=lambda x: performances[x].accuracy_score)
-                        best_accuracy = performances[best_model].accuracy_score
-                        
-                        logger.info(f"🎯 Modelo entrenado para {symbol}: "
-                                  f"Mejor = {best_model} ({best_accuracy:.1f}% accuracy)")
-                    else:
-                        logger.warning(f"⚠️ No se pudieron entrenar modelos para {symbol}")
-                else:
-                    logger.warning(f"⚠️ Pocos datos históricos para {symbol} ({len(historical_data)} velas)")
-                    
-        except Exception as e:
-            logger.error(f"❌ Error entrenando modelos ML: {e}")
-
-    async def run(self):
-        """Bucle principal del bot"""
-        self.is_running = True
-        cycle_count = 0
-        
-        logger.info("🔄 Iniciando bucle principal del bot...")
-        
-        # Notificación de inicio
-        await self.components['notification_system'].send_alert({
-            'type': 'info',
-            'title': 'NvBot2 Iniciado',
-            'message': 'El bot ha comenzado operaciones',
-            'data': {
-                'timestamp': datetime.now().isoformat(),
-                'version': self.config.get('bot.version', '1.0.0')
+            # Actualizar cache
+            self.price_cache[symbol] = {
+                'price': price,
+                'volume': volume,
+                'change': change,
+                'high': high,
+                'low': low,
+                'timestamp': datetime.now()
             }
-        })
+            
+            # Mostrar precios cada 20 actualizaciones
+            if self.processed_count % 20 == 0:
+                self.display_price_update(symbol, price, change, volume)
+            
+            # Generar señal si hay suficiente volumen
+            if volume > 5000000:  # $5M+
+                await self.analyze_trading_opportunity(symbol, ticker_data)
+                
+        except Exception as e:
+            logging.error(f"Error procesando {symbol}: {e}")
+            
+    def display_price_update(self, symbol, price, change, volume):
+        """Muestra actualización de precio formateada"""
+        change_color = "📈" if change >= 0 else "📉"
+        print(f"{change_color} {symbol}: ${price:,.4f} ({change:+.2f}%) Vol: ${volume:,.0f}")
+        
+    async def analyze_trading_opportunity(self, symbol, ticker_data):
+        """Analiza oportunidad de trading"""
+        try:
+            # Preparar datos para análisis
+            market_data = {
+                'symbol': symbol,
+                'current_price': float(ticker_data.price),
+                'volume_24h': float(ticker_data.volume_24h),
+                'price_change_24h': float(ticker_data.change_24h),
+                'high_24h': float(ticker_data.high_24h),
+                'low_24h': float(ticker_data.low_24h),
+                'timestamp': datetime.now()
+            }
+            
+            # Generar señal de trading
+            signal = await self.signals.generate_signal(market_data)
+            
+            if signal and signal.get('signal_strength', 0) > 65:
+                self.signals_generated += 1
+                await self.display_trading_signal(symbol, signal, market_data)
+                
+                # Calcular price target
+                target = await self.predictor.calculate_price_target(market_data)
+                if target:
+                    self.display_price_target(symbol, target)
+                    
+        except Exception as e:
+            logging.error(f"Error analizando {symbol}: {e}")
+            
+    async def display_trading_signal(self, symbol, signal, market_data):
+        """Muestra señal de trading formateada"""
+        print(f"\n🚨 SEÑAL DE TRADING #{self.signals_generated}")
+        print(f"{'='*50}")
+        print(f"📊 Par: {symbol}")
+        print(f"💰 Precio actual: ${market_data['current_price']:,.4f}")
+        print(f"🎯 Tipo: {signal.get('signal_type', 'N/A')}")
+        print(f"💪 Fuerza: {signal.get('signal_strength', 0):.1f}%")
+        print(f"⏰ Timeframe: {signal.get('timeframe', 'N/A')}")
+        
+        # Precios de entrada y salida
+        if signal.get('entry_price'):
+            print(f"🚪 Entrada: ${signal['entry_price']:,.4f}")
+        if signal.get('stop_loss'):
+            print(f"🛑 Stop Loss: ${signal['stop_loss']:,.4f}")
+        if signal.get('take_profit_1'):
+            print(f"🎯 Take Profit 1: ${signal['take_profit_1']:,.4f}")
+        if signal.get('take_profit_2'):
+            print(f"🎯 Take Profit 2: ${signal['take_profit_2']:,.4f}")
+            
+        # Alertas de precaución
+        if signal.get('precaution_alerts'):
+            print(f"⚠️  PRECAUCIÓN:")
+            for alert in signal['precaution_alerts'][:2]:  # Mostrar solo las primeras 2
+                print(f"   • {alert}")
+                
+        # Información adicional
+        if signal.get('position_size_recommended'):
+            print(f"📏 Tamaño posición: {signal['position_size_recommended']:.2%}")
+        if signal.get('risk_level'):
+            print(f"⚖️  Riesgo: {signal['risk_level']}")
+            
+        print(f"{'='*50}\n")
+        
+    def display_price_target(self, symbol, target):
+        """Muestra price target"""
+        print(f"🎯 PRICE TARGET - {symbol}")
+        print(f"   📈 Target: ${target.get('target_price', 0):,.4f}")
+        print(f"   📊 Upside: +{target.get('upside_percentage', 0):.1f}%")
+        print(f"   🕐 Timeframe: {target.get('timeframe', 'N/A')}")
+        print(f"   💯 Confianza: {target.get('confidence_score', 0):.1f}%\n")
+        
+    def display_statistics(self):
+        """Muestra estadísticas en tiempo real"""
+        if not self.start_time:
+            return
+            
+        elapsed = (datetime.now() - self.start_time).total_seconds()
+        
+        print(f"\n📊 ESTADÍSTICAS ({elapsed:.0f}s)")
+        print(f"   📨 Actualizaciones procesadas: {self.processed_count}")
+        print(f"   🚨 Señales generadas: {self.signals_generated}")
+        print(f"   📈 Pares activos: {len(self.price_cache)}")
+        print(f"   ⚡ Rate: {self.processed_count/elapsed:.1f} updates/seg")
+        
+        # Mostrar top 3 pares por volumen
+        if self.price_cache:
+            sorted_pairs = sorted(self.price_cache.items(), 
+                                key=lambda x: x[1]['volume'], reverse=True)[:3]
+            print(f"   🔥 Top pares por volumen:")
+            for symbol, data in sorted_pairs:
+                print(f"      {symbol}: ${data['volume']:,.0f}")
+        print()
+        
+    async def run(self, duration=300):  # 5 minutos por defecto
+        """Ejecuta el bot por un tiempo determinado"""
+        self.display_banner()
+        
+        print(f"🕐 Ejecutando por {duration} segundos...")
+        print("📡 Conectando a datos en tiempo real...")
         
         try:
-            while self.is_running:
-                cycle_start = datetime.now()
-                cycle_count += 1
+            self.is_running = True
+            self.start_time = datetime.now()
+            
+            # Inicializar aggregator
+            self.aggregator = BinanceWebSocketAggregator(self.config)
+            self.aggregator.register_callback('ticker_update', self.on_price_update)
+            
+            # Conectar
+            await self.aggregator.initialize()
+            print("✅ Conectado! Monitoreando mercado...\n")
+            
+            # Loop principal con estadísticas
+            for i in range(duration):
+                await asyncio.sleep(1)
                 
-                logger.info(f"🔄 Ciclo #{cycle_count} - {cycle_start.strftime('%H:%M:%S')}")
-                
-                try:
-                    # 1. Obtener datos de mercado
-                    market_data = await self.components['data_aggregator'].get_latest_data()
-                    ticker_data = await self.components['data_aggregator'].get_ticker_data()
-                    
-                    if not market_data:
-                        logger.warning("⚠️ No se obtuvieron datos de mercado")
-                        await asyncio.sleep(30)
-                        continue
-                    
-                    # 2. Actualizar precios en portfolio
-                    current_prices = {
-                        symbol: ticker.last_price 
-                        for symbol, ticker in ticker_data.items()
-                    }
-                    await self.components['portfolio_manager'].update_positions(current_prices)
-                    
-                    # 3. Generar señales de trading
-                    all_signals = []
-                    
-                    for symbol, data in market_data.items():
-                        if len(data) < 10:  # Datos insuficientes
-                            continue
-                            
-                        try:
-                            # Convertir a DataFrame para análisis
-                            df = self._convert_to_dataframe(data)
-                            
-                            # Ejecutar estrategia principal
-                            signals = await self.components['main_strategy'].analyze_symbol(
-                                symbol, df, current_prices.get(symbol, 0)
-                            )
-                            
-                            if signals:
-                                all_signals.extend(signals)
-                                
-                        except Exception as e:
-                            logger.error(f"❌ Error analizando {symbol}: {e}")
-                    
-                    # 4. Ejecutar señales
-                    if all_signals:
-                        logger.info(f"📈 Ejecutando {len(all_signals)} señales")
-                        
-                        results = await self.components['portfolio_manager'].execute_signals(all_signals)
-                        
-                        # Notificar trades ejecutados
-                        successful_trades = [r for r in results if r.success]
-                        if successful_trades:
-                            await self._notify_trades(successful_trades)
-                    
-                    # 5. Enviar resumen periódico
-                    if cycle_count % 60 == 0:  # Cada hora (si ciclo = 1 min)
-                        await self._send_periodic_summary()
-                    
-                    # 6. Esperar próximo ciclo
-                    cycle_interval = self.config.get("bot.cycle_interval", 60)
-                    await asyncio.sleep(cycle_interval)
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error en ciclo del bot: {e}")
-                    await asyncio.sleep(30)  # Esperar menos tiempo en caso de error
+                # Mostrar estadísticas cada 30 segundos
+                if i > 0 and i % 30 == 0:
+                    self.display_statistics()
                     
         except KeyboardInterrupt:
-            logger.info("⏹️ Bot detenido por usuario")
+            print("\n⏹️  Bot detenido por usuario")
         except Exception as e:
-            logger.error(f"❌ Error crítico en bot: {e}")
-            raise
+            print(f"\n❌ Error en bot: {e}")
+            logging.error(f"Error en bot: {e}")
         finally:
-            await self.shutdown()
-    
-    def _convert_to_dataframe(self, market_data: List) -> pd.DataFrame:
-        """Convierte datos de mercado a DataFrame"""
-        data = []
-        for candle in market_data:
-            data.append({
-                'timestamp': candle.timestamp,
-                'open': candle.open,
-                'high': candle.high,
-                'low': candle.low,
-                'close': candle.close,
-                'volume': candle.volume
-            })
-        
-        df = pd.DataFrame(data)
-        df.set_index('timestamp', inplace=True)
-        df = df.sort_index()
-        
-        return df
-    
-    async def _notify_trades(self, successful_trades):
-        """Notifica trades ejecutados"""
-        for trade in successful_trades:
-            await self.components['notification_system'].send_alert({
-                'type': 'trade',
-                'title': f'Trade Ejecutado: {trade.symbol}',
-                'message': f'{trade.side.upper()} {trade.amount:.6f} @ ${trade.price:.2f}',
-                'data': {
-                    'symbol': trade.symbol,
-                    'side': trade.side,
-                    'amount': trade.amount,
-                    'price': trade.price,
-                    'order_id': trade.order_id
-                }
-            })
-    
-    async def _send_periodic_summary(self):
-        """Envía resumen periódico del portfolio"""
-        try:
-            summary = self.components['portfolio_manager'].get_portfolio_summary()
+            await self.stop()
             
-            await self.components['notification_system'].send_alert({
-                'type': 'summary',
-                'title': 'Resumen del Portfolio',
-                'message': f"Balance: ${summary['total_balance']:.2f} | PnL: ${summary['total_pnl']:.2f}",
-                'data': summary
-            })
-            
-        except Exception as e:
-            logger.error(f"Error enviando resumen: {e}")
-    
-    async def shutdown(self):
-        """Cierra todos los componentes del bot"""
-        logger.info("🛑 Cerrando NvBot2...")
-        
+    async def stop(self):
+        """Detiene el bot"""
         self.is_running = False
         
-        # Cerrar componentes
-        for name, component in self.components.items():
+        if self.aggregator:
             try:
-                if hasattr(component, 'close'):
-                    await component.close()
-                logger.info(f"✅ {name} cerrado")
+                await self.aggregator.close()
+                print("✅ WebSocket cerrado")
             except Exception as e:
-                logger.error(f"❌ Error cerrando {name}: {e}")
+                logging.error(f"Error cerrando aggregator: {e}")
+                
+        # Mostrar estadísticas finales
+        self.display_final_summary()
         
-        # Notificación de cierre
-        if 'notification_system' in self.components:
-            try:
-                await self.components['notification_system'].send_alert({
-                    'type': 'info',
-                    'title': 'NvBot2 Detenido',
-                    'message': 'El bot ha finalizado operaciones',
-                    'data': {'timestamp': datetime.now().isoformat()}
-                })
-            except:
-                pass
+    def display_final_summary(self):
+        """Muestra resumen final"""
+        print("\n" + "="*70)
+        print("📋 RESUMEN DE SESIÓN")
+        print("="*70)
         
-        logger.info("✅ NvBot2 cerrado correctamente")
+        if self.start_time:
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            print(f"⏰ Duración: {elapsed:.0f} segundos")
+            print(f"📊 Total actualizaciones: {self.processed_count}")
+            print(f"🚨 Señales generadas: {self.signals_generated}")
+            print(f"📈 Rate promedio: {self.processed_count/elapsed:.1f} updates/seg")
+            
+        print(f"✅ Bot ejecutado exitosamente")
+        print("="*70 + "\n")
 
 async def main():
-    """Función principal del bot"""
+    """Función principal"""
+    bot = LiveIntradayBot()
+    
+    print("🤖 ¿Cuánto tiempo quieres ejecutar el bot?")
+    print("1. Demo rápida (60 segundos)")
+    print("2. Sesión corta (5 minutos)")
+    print("3. Sesión media (15 minutos)")
+    print("4. Sesión larga (30 minutos)")
+    
     try:
-        # Crear e inicializar bot
-        bot = NvBot2()
-        await bot.initialize()
+        choice = input("\nElige una opción (1-4) o presiona Enter para demo: ").strip()
         
-        # Ejecutar bot
-        await bot.run()
+        duration_map = {
+            '1': 60,
+            '2': 300,
+            '3': 900,
+            '4': 1800
+        }
+        
+        duration = duration_map.get(choice, 60)  # Por defecto 1 minuto
+        print(f"\n🚀 Iniciando sesión de {duration} segundos...")
+        
+        await bot.run(duration)
         
     except KeyboardInterrupt:
-        logger.info("⏹️ Bot interrumpido por usuario")
+        print("\n👋 Bot cancelado por usuario")
     except Exception as e:
-        logger.error(f"❌ Error crítico: {e}")
-        raise
+        print(f"\n❌ Error: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 Hasta luego!")
