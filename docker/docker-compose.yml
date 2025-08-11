@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  momentum-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: momentum-predictor-bot
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - PYTHONPATH=/app/src
+    env_file:
+      - ../.env
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../config:/app/config
+    networks:
+      - momentum-network
+    depends_on:
+      - redis
+      - postgres
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: momentum-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - momentum-network
+    command: redis-server --appendonly yes
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: momentum-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: momentum_bot
+      POSTGRES_USER: momentum_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-momentum_pass_change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - momentum-network
+
+  jupyter:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: momentum-jupyter
+    restart: unless-stopped
+    environment:
+      - PYTHONPATH=/app/src
+    env_file:
+      - ../.env
+    ports:
+      - "8888:8888"
+    volumes:
+      - ../notebooks:/app/notebooks
+      - ../data:/app/data
+      - ../src:/app/src
+    networks:
+      - momentum-network
+    command: >
+      bash -c "pip install jupyter lab &&
+               jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+               --LabApp.token='' --LabApp.password=''"
+    profiles:
+      - dev
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: momentum-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - momentum-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: momentum-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - momentum-network
+    profiles:
+      - monitoring
+
+volumes:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  momentum-network:
+    driver: bridge

@@ -1,0 +1,111 @@
+# Configuración de parámetros de modelos ML
+
+# Modelo Transformer para predicción de momentum
+transformer_model:
+  architecture:
+    d_model: 256
+    nhead: 8
+    num_layers: 6
+    dim_feedforward: 1024
+    dropout: 0.1
+    
+  training:
+    batch_size: 32
+    learning_rate: 0.0001
+    epochs: 100
+    patience: 10
+    validation_split: 0.2
+    
+  features:
+    sequence_length: 168  # 1 semana de datos horarios
+    prediction_horizon: 24  # Predecir 24 horas adelante
+    
+# Modelo de Regresión para estimación de precios
+regression_model:
+  type: "RandomForestRegressor"
+  parameters:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 2
+    min_samples_leaf: 1
+    random_state: 42
+    
+# Modelo de Clasificación para señales de trading
+classification_model:
+  type: "XGBClassifier"
+  parameters:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    random_state: 42
+    
+# Feature Engineering
+feature_engineering:
+  technical_indicators:
+    - "sma_20"
+    - "sma_50"
+    - "ema_12"
+    - "ema_26"
+    - "rsi_14"
+    - "macd"
+    - "bollinger_bands"
+    - "stochastic"
+    - "williams_r"
+    
+  price_features:
+    - "price_change_1h"
+    - "price_change_4h"
+    - "price_change_24h"
+    - "volatility_1h"
+    - "volatility_24h"
+    
+  volume_features:
+    - "volume_sma_20"
+    - "volume_ratio"
+    - "volume_weighted_price"
+    
+  momentum_features:
+    - "momentum_12"
+    - "momentum_26"
+    - "rate_of_change"
+    
+# Configuración de entrenamiento
+training:
+  validation:
+    cross_validation_folds: 5
+    time_series_split: true
+    
+  hyperparameter_tuning:
+    enabled: true
+    method: "RandomizedSearchCV"
+    n_iter: 50
+    scoring: "accuracy"
+    
+  model_selection:
+    metrics:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1_score"
+      - "roc_auc"
+      
+# Configuración de evaluación
+evaluation:
+  metrics:
+    classification:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1_score"
+      - "confusion_matrix"
+      
+    regression:
+      - "mae"
+      - "mse"
+      - "rmse"
+      - "r2_score"
+      
+  backtesting:
+    enabled: true
+    test_period_days: 30
+    walk_forward_analysis: true

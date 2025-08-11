@@ -1,0 +1,66 @@
+# Configuración de pares de trading
+trading_pairs:
+  major_pairs:
+    - symbol: "BTC/USDT"
+      min_volume_24h: 1000000000  # $1B
+      tick_size: 0.01
+      min_qty: 0.00001
+      
+    - symbol: "ETH/USDT"
+      min_volume_24h: 500000000   # $500M
+      tick_size: 0.01
+      min_qty: 0.0001
+      
+    - symbol: "BNB/USDT"
+      min_volume_24h: 100000000   # $100M
+      tick_size: 0.001
+      min_qty: 0.001
+
+  altcoins:
+    - symbol: "ADA/USDT"
+      min_volume_24h: 50000000    # $50M
+      tick_size: 0.0001
+      min_qty: 0.1
+      
+    - symbol: "DOT/USDT"
+      min_volume_24h: 30000000    # $30M
+      tick_size: 0.001
+      min_qty: 0.01
+      
+    - symbol: "LINK/USDT"
+      min_volume_24h: 50000000
+      tick_size: 0.001
+      min_qty: 0.01
+      
+    - symbol: "UNI/USDT"
+      min_volume_24h: 40000000
+      tick_size: 0.001
+      min_qty: 0.01
+
+  defi_tokens:
+    - symbol: "AAVE/USDT"
+      min_volume_24h: 20000000
+      tick_size: 0.01
+      min_qty: 0.001
+      
+    - symbol: "COMP/USDT"
+      min_volume_24h: 15000000
+      tick_size: 0.01
+      min_qty: 0.001
+
+# Configuración de timeframes
+timeframes:
+  primary: "1h"      # Timeframe principal para análisis
+  secondary: "15m"   # Timeframe secundario
+  longterm: "4h"     # Timeframe de largo plazo
+  
+# Horarios de trading
+trading_hours:
+  enabled: true
+  start_hour: 0      # UTC
+  end_hour: 24       # UTC (24/7 para crypto)
+  
+# Configuración de volatilidad por par
+volatility_filters:
+  max_daily_volatility: 0.15  # 15% máximo
+  min_daily_volatility: 0.02  # 2% mínimo

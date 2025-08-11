@@ -1,0 +1,66 @@
+# Configuración principal del bot
+bot:
+  name: "MomentumPredictorBot"
+  version: "1.0.0"
+  cycle_interval: 60  # segundos entre ciclos
+  trading_pairs:
+    - "BTC/USDT"
+    - "ETH/USDT"
+    - "BNB/USDT"
+    - "ADA/USDT"
+    - "DOT/USDT"
+
+# Configuración de detección de momentum
+momentum:
+  rsi_period: 14
+  volume_threshold: 1.5
+  price_change_threshold: 0.02
+  prediction_horizon: 24  # horas
+  
+# Configuración de gestión de riesgo
+risk_management:
+  max_position_size: 0.1  # 10% del portfolio por posición
+  stop_loss_pct: 0.05     # 5% stop loss
+  take_profit_pct: 0.10   # 10% take profit
+  max_daily_trades: 10
+  max_portfolio_risk: 0.3 # 30% del portfolio en riesgo máximo
+
+# Configuración de exchanges
+exchanges:
+  binance:
+    enabled: true
+    testnet: true
+    # api_key y secret_key se cargan desde variables de entorno
+  coinbase:
+    enabled: false
+    sandbox: true
+
+# Configuración de modelos ML
+ml_models:
+  retrain_interval: 168  # horas (1 semana)
+  min_training_samples: 1000
+  model_type: "transformer"
+  features:
+    - "price_change"
+    - "volume_ratio"
+    - "rsi"
+    - "macd"
+    - "bollinger_bands"
+
+# Configuración de notificaciones
+notifications:
+  enabled: true
+  telegram:
+    enabled: false
+    # bot_token y chat_id se cargan desde variables de entorno
+  email:
+    enabled: false
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+
+# Configuración de logging
+logging:
+  level: "INFO"
+  file: "momentum_bot.log"
+  max_size_mb: 10
+  backup_count: 5
